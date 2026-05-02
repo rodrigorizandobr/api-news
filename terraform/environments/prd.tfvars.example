@@ -1,0 +1,18 @@
+project_id                  = "your-prd-project-id"
+manage_project_services     = false
+region                      = "us-central1"
+function_name               = "api-news"
+create_firestore_database   = true
+firestore_location          = "nam5"
+firestore_cache_collection  = "api_news"
+allow_unauthenticated       = false
+max_instance_count          = 3
+
+auth_jwt_secret             = "REPLACE_WITH_MIN_32_CHAR_SECRET"
+auth_jwt_expiry_hours       = 24
+
+bigquery_max_bytes_billed   = 175921860444
+enable_project_budget_guardrail = true
+billing_account_id              = "XXXXXX-XXXXXX-XXXXXX"
+project_monthly_budget_usd      = 25
+project_budget_currency         = "BRL"

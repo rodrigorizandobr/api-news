@@ -1,0 +1,12 @@
+project_id                  = "your-dev-project-id"
+manage_project_services     = false
+region                      = "us-central1"
+function_name               = "api-news"
+create_firestore_database   = true
+firestore_location          = "nam5"
+firestore_cache_collection  = "api_news"
+allow_unauthenticated       = true
+max_instance_count          = 1
+
+auth_jwt_secret             = "replace-with-dev-min-32-char-jwt-secret"
+auth_jwt_expiry_hours       = 24

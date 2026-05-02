@@ -1,0 +1,17 @@
+# Basic project settings
+project_id                 = "your-gcp-project-id"
+manage_project_services    = false
+region                     = "us-central1"
+function_name              = "api-news"
+
+# Firestore cache
+create_firestore_database  = true
+firestore_location         = "nam5"
+firestore_cache_collection = "api_news"
+
+# Runtime and access
+allow_unauthenticated      = true
+max_instance_count         = 1
+
+auth_jwt_secret        = "replace-with-minimum-32-char-secret"
+auth_jwt_expiry_hours  = 24
