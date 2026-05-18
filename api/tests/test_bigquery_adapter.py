@@ -56,7 +56,7 @@ def test_bigquery_sql_builder() -> None:
     assert "srclc:por" in sql.lower()
     assert "BR" in sql.upper()
     assert "gdelt-bq.gdeltv2.gkg_partitioned" in sql
-    assert "LIMIT 50" in sql
+    assert "LIMIT 1000" in sql
 
 
 def test_fetch_bigquery_news_maps_response(monkeypatch) -> None:

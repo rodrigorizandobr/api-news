@@ -235,3 +235,159 @@ def test_historical_cache_write_removes_legacy_modes(monkeypatch) -> None:
 
     current_key = service._build_cache_key_with_mode(["petrobras"], historical_date, "pt", "BR")
     assert current_key in fake_cache.data
+
+
+def test_cache_key_is_based_on_url_params() -> None:
+    historical_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+    key = service._build_cache_key_with_mode(
+        ["Petrobras"],
+        historical_date,
+        "es",
+        "us",
+    )
+
+    assert f"q=petrobras" in key
+    assert f"date={historical_date.isoformat()}" in key
+    assert "language=es" in key
+    assert "country=US" in key
+
+
+def test_cache_key_changes_when_url_params_change() -> None:
+    historical_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+    base = service._build_cache_key_with_mode(["petrobras"], historical_date, "es", "US")
+
+    different_q = service._build_cache_key_with_mode(["vale"], historical_date, "es", "US")
+    different_date = service._build_cache_key_with_mode(["petrobras"], historical_date - timedelta(days=1), "es", "US")
+    different_language = service._build_cache_key_with_mode(["petrobras"], historical_date, "pt", "US")
+    different_country = service._build_cache_key_with_mode(["petrobras"], historical_date, "es", "BR")
+
+    assert base != different_q
+    assert base != different_date
+    assert base != different_language
+    assert base != different_country
+
+
+def test_per_keyword_cache_hit_overlapping_keywords(monkeypatch) -> None:
+    """Test that overlapping keywords from previous searches are cached."""
+    calls = {"count": 0}
+    fake_cache = FakeCacheStore()
+    historical_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+
+    def fake_fetch(keywords, exact_date=None, language=None, country=None):
+        calls["count"] += 1
+        # Return articles for the keyword(s) searched
+        articles = []
+        for kw in keywords:
+            if kw.lower() == "petrobras":
+                articles.append({"record_id": "petro-1", "title": "petrobras article", "url": "petrobras.com"})
+            elif kw.lower() == "vale":
+                articles.append({"record_id": "vale-1", "title": "vale article", "url": "vale.com"})
+            elif kw.lower() == "petroleo":
+                articles.append({"record_id": "petroleo-1", "title": "petroleo article", "url": "petroleo.com"})
+        return {
+            "query": " OR ".join(keywords),
+            "article_count": len(articles),
+            "articles": articles,
+            "source": "bigquery-gdelt",
+        }
+
+    monkeypatch.setattr(service, "fetch_provider_news", fake_fetch)
+    monkeypatch.setattr(service, "get_cache_store", lambda: fake_cache)
+
+    # First search: q=petrobras,vale
+    # Per-keyword strategy: 2 queries (one per term)
+    first = service.search_news_with_cache(
+        ["petrobras", "vale"],
+        exact_date=historical_date,
+        language="pt",
+        country="BR",
+    )
+
+    # Second search: q=petrobras,petroleo
+    # Per-keyword strategy: petrobras from cache + 1 new query (petroleo) = 1 query
+    second = service.search_news_with_cache(
+        ["petrobras", "petroleo"],
+        exact_date=historical_date,
+        language="pt",
+        country="BR",
+    )
+
+    # Verify cache hits
+    assert first["cache_hit"] is False  # First search has no cache
+    assert second["cache_hit"] is True  # Second search has cache hit for petrobras
+    assert second["cache_keywords_hit"] == 1  # 1 out of 2 keywords from cache
+    assert second["cache_keywords_total"] == 2
+    
+    # Verify query count: per-keyword strategy
+    # First search: 2 queries (petrobras, vale)
+    # Second search: 1 query (petroleo; petrobras is cached)
+    # Total: 3 queries
+    assert calls["count"] == 3
+    
+    # Verify articles were combined correctly
+    assert first["article_count"] == 2  # petrobras + vale
+    assert second["article_count"] == 2  # petrobras (cached) + petroleo
+
+
+def test_deduplicate_articles_by_record_id(monkeypatch) -> None:
+    """Test that duplicate articles (same record_id) are removed."""
+    fake_cache = FakeCacheStore()
+    historical_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+
+    def fake_fetch(keywords, exact_date=None, language=None, country=None):
+        # Both keywords return the same article (same record_id)
+        return {
+            "query": keywords[0],
+            "article_count": 1,
+            "articles": [{"record_id": "shared-id", "title": "shared article"}],
+            "source": "bigquery-gdelt",
+        }
+
+    monkeypatch.setattr(service, "fetch_provider_news", fake_fetch)
+    monkeypatch.setattr(service, "get_cache_store", lambda: fake_cache)
+
+    response = service.search_news_with_cache(
+        ["petrobras", "vale"],
+        exact_date=historical_date,
+        language="pt",
+        country="BR",
+    )
+
+    # Should deduplicate to 1 article instead of 2
+    assert response["article_count"] == 1
+    assert len(response["articles"]) == 1
+    assert response["articles"][0]["record_id"] == "shared-id"
+
+
+def test_cache_granularity_field_per_keyword(monkeypatch) -> None:
+    """Test that cache_granularity field indicates per-keyword strategy."""
+    fake_cache = FakeCacheStore()
+    historical_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+
+    def fake_fetch(keywords, exact_date=None, language=None, country=None):
+        return {
+            "query": keywords[0],
+            "article_count": 0,
+            "articles": [],
+            "source": "bigquery-gdelt",
+        }
+
+    monkeypatch.setattr(service, "fetch_provider_news", fake_fetch)
+    monkeypatch.setattr(service, "get_cache_store", lambda: fake_cache)
+
+    single = service.search_news_with_cache(
+        ["petrobras"],
+        exact_date=historical_date,
+        language="pt",
+        country="BR",
+    )
+    
+    multiple = service.search_news_with_cache(
+        ["petrobras", "vale"],
+        exact_date=historical_date,
+        language="pt",
+        country="BR",
+    )
+
+    assert single["cache_granularity"] == "single-keyword"
+    assert multiple["cache_granularity"] == "per-keyword"

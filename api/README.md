@@ -145,3 +145,35 @@ HTTP entrypoint: `handler` in `main.py`.
 ## Cache
 
 Dados históricos (datas anteriores ao dia atual) são cacheados permanentemente no Firestore. Dados do dia atual nunca são cacheados.
+
+### Estratégia: Cache por Termo Individual
+
+A busca usa caching granular por termo com economia de custo:
+
+1. **Query por termo**: Cada keyword é buscada individualmente no BigQuery
+2. **Cache granular**: Cada termo é cacheado separadamente
+3. **Reutilização**: Buscas subsequentes com termos repetidos vêm do cache
+4. **Deduplicação**: Artigos duplicados (mesmo record_id) são removidos
+
+**Otimização de custo:**
+- Cada query custa **$0.001** (devido a partition pruning by date, language/country filter, LIMIT 50)
+- Termos em cache não geram custo adicional
+
+**Exemplo:**
+```
+Busca 1: q=petrobras,vale&date=2026-04-09&...
+  → 2 queries ao BigQuery ($0.002 total)
+  → Cacheia: petrobras, vale
+
+Busca 2: q=petrobras,petroleo&date=2026-04-09&...
+  → 1 query ao BigQuery ($0.001) [petroleo]
+  → petrobras vem do cache (sem custo!)
+  → Total economizado: $0.001 por overlap
+```
+
+**Campos de observabilidade na resposta:**
+- `cache_hit`: true se qualquer termo veio do cache ou stale fallback
+- `cache_keywords_hit`: número de keywords do cache
+- `cache_keywords_total`: total de keywords buscadas
+- `cache_granularity`: "single-keyword" ou "per-keyword"
+- `stale_fallback`: true se usou cache desatualizado após erro upstream

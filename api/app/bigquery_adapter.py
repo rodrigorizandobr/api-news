@@ -226,7 +226,7 @@ def _build_bigquery_sql(
         AND {language_condition}
         AND UPPER(IFNULL(V2Locations, '')) LIKE '%#{country_code}#%'
         AND ({keyword_conditions})
-    LIMIT 50
+    LIMIT 1000
     """
     return sql
 
