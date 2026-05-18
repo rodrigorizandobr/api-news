@@ -8,7 +8,6 @@ Use this checklist before deploying to production.
 - [ ] No lint/type errors: `cd api && python -m pylint app/` (if configured)
 - [ ] All changes committed to git
 - [ ] No hardcoded secrets in code
-- [ ] `.env.example` updated with all variables
 
 ## Configuration
 
