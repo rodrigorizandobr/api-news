@@ -25,9 +25,12 @@ def reset_rate_limiter() -> None:
 
 
 def test_health_returns_ok() -> None:
+    api_module.app.state.limiter.reset()
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "bigquery_panel" in payload
 
 
 def test_news_rejects_empty_keywords() -> None:

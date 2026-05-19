@@ -110,6 +110,12 @@ resource "google_project_iam_member" "api_news_bigquery_data_viewer" {
   member  = "serviceAccount:${google_service_account.api_news_runtime.email}"
 }
 
+resource "google_project_iam_member" "api_news_bigquery_resource_viewer" {
+  project = var.project_id
+  role    = "roles/bigquery.resourceViewer"
+  member  = "serviceAccount:${google_service_account.api_news_runtime.email}"
+}
+
 resource "google_cloudfunctions2_function" "api_news_function" {
   name        = var.function_name
   location    = var.region
@@ -161,6 +167,7 @@ resource "google_cloudfunctions2_function" "api_news_function" {
     google_project_iam_member.api_news_firestore_user,
     google_project_iam_member.api_news_bigquery_job_user,
     google_project_iam_member.api_news_bigquery_data_viewer,
+    google_project_iam_member.api_news_bigquery_resource_viewer,
     google_firestore_database.api_news_cache_database,
   ]
 }

@@ -1,9 +1,11 @@
 from datetime import date as date_type
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import ValidationError
 
 from app.auth import AuthConfig, verify_auth
+from app.bigquery_adapter import fetch_bigquery_usage_panel
 from app.config import NewsQueryParams
 from app.contract import normalize_contract_response
 from app.gdelt_adapter import NewsAPIError
@@ -19,8 +21,11 @@ auth_config = AuthConfig.from_env()
 
 @app.get("/health")
 @limiter.limit(HEALTH_RATE_LIMIT)
-def health(request: Request) -> dict[str, str]:
-    return {"status": "ok"}
+def health(request: Request) -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "bigquery_panel": fetch_bigquery_usage_panel(),
+    }
 
 
 @app.get("/news")

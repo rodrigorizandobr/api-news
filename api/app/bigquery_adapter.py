@@ -25,6 +25,9 @@ BIGQUERY_DATASET = os.getenv("BIGQUERY_DATASET", "gdeltv2")
 BIGQUERY_TABLE = os.getenv("BIGQUERY_TABLE", "gkg_partitioned")
 BIGQUERY_LOCATION = os.getenv("BIGQUERY_LOCATION", "US")
 BIGQUERY_MAX_BYTES_BILLED = int(os.getenv("BIGQUERY_MAX_BYTES_BILLED", "175921860444"))
+HEALTH_PANEL_MAX_BYTES_BILLED = int(os.getenv("HEALTH_PANEL_MAX_BYTES_BILLED", str(50 * 1024 * 1024)))
+BIGQUERY_COST_PER_TIB_USD = float(os.getenv("BIGQUERY_COST_PER_TIB_USD", "6.25"))
+BYTES_PER_TIB = 1_099_511_627_776
 
 LANGUAGE_CODE_MAP = {
     "en": "eng",
@@ -289,6 +292,72 @@ def fetch_bigquery_news(
             status_code=502,
             code="UPSTREAM_ERROR",
         ) from exc
+
+
+def fetch_bigquery_usage_panel() -> dict[str, Any]:
+    """Fetch compact daily BigQuery usage metrics for /health panel."""
+    sql = f"""
+    SELECT
+      COUNT(*) AS total_jobs,
+      COUNTIF(error_result IS NULL) AS success_count,
+      COUNTIF(error_result IS NOT NULL) AS fail_count,
+      COUNTIF(error_result.reason = 'quotaExceeded') AS quota_exceeded_count,
+      IFNULL(SUM(total_bytes_processed), 0) AS total_bytes_processed,
+      IFNULL(SUM(total_bytes_billed), 0) AS total_bytes_billed,
+      IFNULL(SUM(total_slot_ms), 0) AS total_slot_ms
+    FROM `region-{BIGQUERY_LOCATION.lower()}`.INFORMATION_SCHEMA.JOBS
+    WHERE project_id = @project_id
+      AND job_type = 'QUERY'
+      AND DATE(creation_time, 'UTC') = CURRENT_DATE('UTC')
+    """
+
+    try:
+        client = bigquery.Client(project=BIGQUERY_PROJECT)
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("project_id", "STRING", BIGQUERY_PROJECT),
+            ],
+            maximum_bytes_billed=HEALTH_PANEL_MAX_BYTES_BILLED,
+            use_query_cache=True,
+        )
+        query_job = client.query(sql, location=BIGQUERY_LOCATION, job_config=job_config)
+        row = next(iter(query_job.result()), None)
+        if row is None:
+            return {
+                "status": "ok",
+                "period": "today_utc",
+                "total_jobs": 0,
+                "success_count": 0,
+                "fail_count": 0,
+                "quota_exceeded_count": 0,
+                "total_bytes_processed": 0,
+                "total_bytes_billed": 0,
+                "total_slot_ms": 0,
+                "estimated_cost_usd": 0.0,
+            }
+
+        total_bytes_billed = int(row.total_bytes_billed or 0)
+        estimated_cost_usd = round((total_bytes_billed / BYTES_PER_TIB) * BIGQUERY_COST_PER_TIB_USD, 6)
+
+        return {
+            "status": "ok",
+            "period": "today_utc",
+            "total_jobs": int(row.total_jobs or 0),
+            "success_count": int(row.success_count or 0),
+            "fail_count": int(row.fail_count or 0),
+            "quota_exceeded_count": int(row.quota_exceeded_count or 0),
+            "total_bytes_processed": int(row.total_bytes_processed or 0),
+            "total_bytes_billed": total_bytes_billed,
+            "total_slot_ms": int(row.total_slot_ms or 0),
+            "estimated_cost_usd": estimated_cost_usd,
+            "pricing_usd_per_tib": BIGQUERY_COST_PER_TIB_USD,
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "period": "today_utc",
+            "error": str(exc),
+        }
 
 
 # Backward compatible alias

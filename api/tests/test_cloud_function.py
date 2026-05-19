@@ -32,7 +32,8 @@ class CloudFunctionTester:
         """Test /health endpoint returns 200."""
         resp = self.session.get(f"{self.function_url}/health")
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        assert resp.json() == {"status": "ok"}, f"Unexpected response: {resp.json()}"
+        payload = resp.json()
+        assert payload.get("status") == "ok", f"Unexpected response: {payload}"
         print("✓ Health check passed")
         return True
 
